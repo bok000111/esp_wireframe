@@ -3,6 +3,7 @@
 
 #include "driver/gptimer.h"
 #include "driver/i2c_master.h"
+#include "driver/temperature_sensor.h"
 #include "esp_lcd_types.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -29,6 +30,7 @@
 #define LV_UI_REFRESH_PERIOD_MS 16
 
 typedef struct ssd1306_lcd_panel_s {
+  temperature_sensor_handle_t temp_handle;
   i2c_master_bus_handle_t i2c_bus;
   esp_lcd_panel_io_handle_t io_handle;
   esp_lcd_panel_handle_t panel_handle;

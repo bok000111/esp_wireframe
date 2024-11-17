@@ -8,6 +8,13 @@
 #include "render.h"
 
 #define TAG "LCD"
+#define CHECK_ALLOC(ptr)                                    \
+  do {                                                      \
+    if (ptr == NULL) {                                      \
+      ESP_LOGE(TAG, "Failed to allocate memory: %s", #ptr); \
+      abort();                                              \
+    }                                                       \
+  } while (0)
 
 static bool lv_tick_timer_cb(gptimer_handle_t timer,
                              const gptimer_alarm_event_data_t *edata,
@@ -18,21 +25,38 @@ static void lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area,
 ssd1306_lcd_panel_t *lcd_setup(void) {
   ssd1306_lcd_panel_t *lcd =
       heap_caps_calloc(1, sizeof(ssd1306_lcd_panel_t), MALLOC_CAP_8BIT);
+  CHECK_ALLOC(lcd);
   lcd->lcd_buf = heap_caps_calloc(LCD_BUF_SIZE, sizeof(uint8_t),
                                   MALLOC_CAP_8BIT | MALLOC_CAP_DMA);
+  CHECK_ALLOC(lcd->lcd_buf);
   lcd->draw_buf0 =
       heap_caps_calloc(LVGL_DRAW_BUF_SIZE, sizeof(uint8_t), MALLOC_CAP_8BIT);
+  CHECK_ALLOC(lcd->draw_buf0);
   lcd->draw_buf1 =
       heap_caps_calloc(LVGL_DRAW_BUF_SIZE, sizeof(uint8_t), MALLOC_CAP_8BIT);
+  CHECK_ALLOC(lcd->draw_buf1);
   lcd->canvas_buf =
       heap_caps_calloc(lv_color_format_get_size(LV_COLOR_FORMAT_ARGB8888) *
                            LCD_WIDTH / sizeof(uint8_t) * LCD_HEIGHT,
                        sizeof(uint8_t), MALLOC_CAP_8BIT);
+  CHECK_ALLOC(lcd->canvas_buf);
   ESP_LOGD(TAG, "LCD struct allocated");
 
   lcd->lcd_buf_mutex = xSemaphoreCreateMutex();
+  CHECK_ALLOC(lcd->lcd_buf_mutex);
   lcd->lvgl_mutex = xSemaphoreCreateMutex();
+  CHECK_ALLOC(lcd->lvgl_mutex);
   ESP_LOGD(TAG, "LCD mutex created");
+
+  temperature_sensor_config_t temp_sensor_conf = {
+      .range_min = 20,
+      .range_max = 50,
+      .clk_src = TEMPERATURE_SENSOR_CLK_SRC_DEFAULT,
+  };
+  ESP_ERROR_CHECK(
+      temperature_sensor_install(&temp_sensor_conf, &lcd->temp_handle));
+  ESP_ERROR_CHECK(temperature_sensor_enable(lcd->temp_handle));
+  ESP_LOGD(TAG, "Temperature sensor installed and enabled");
 
   i2c_master_bus_config_t bus_config = {
       .clk_source = I2C_CLK_SRC_DEFAULT,
@@ -93,19 +117,20 @@ void setup_lv_timer(ssd1306_lcd_panel_t *lcd) {
       .direction = GPTIMER_COUNT_UP,
       .resolution_hz = 1 * 1000 * 1000,
   };
-  gptimer_new_timer(&timer_config, &lcd->lv_tick_timer);
+  ESP_ERROR_CHECK(gptimer_new_timer(&timer_config, &lcd->lv_tick_timer));
   gptimer_alarm_config_t alarm_config = {
       .reload_count = 0,  // counter will reload with 0 on alarm event
       .alarm_count = LV_TICK_PERIOD_MS * 1000,  // alarm period in us
       .flags.auto_reload_on_alarm = true,       // enable auto-reload
   };
-  gptimer_set_alarm_action(lcd->lv_tick_timer, &alarm_config);
+  ESP_ERROR_CHECK(gptimer_set_alarm_action(lcd->lv_tick_timer, &alarm_config));
   gptimer_event_callbacks_t timer_cbs = {
       .on_alarm = lv_tick_timer_cb,
   };
-  gptimer_register_event_callbacks(lcd->lv_tick_timer, &timer_cbs, lcd);
-  gptimer_enable(lcd->lv_tick_timer);
-  gptimer_start(lcd->lv_tick_timer);
+  ESP_ERROR_CHECK(
+      gptimer_register_event_callbacks(lcd->lv_tick_timer, &timer_cbs, lcd));
+  ESP_ERROR_CHECK(gptimer_enable(lcd->lv_tick_timer));
+  ESP_ERROR_CHECK(gptimer_start(lcd->lv_tick_timer));
 }
 
 static void update_label_cb(lv_timer_t *timer);
@@ -117,7 +142,7 @@ void setup_lv_ui(ssd1306_lcd_panel_t *lcd) {
   lv_obj_set_user_data(stat, lcd);
   lv_obj_align(stat, LV_ALIGN_TOP_LEFT, 2, 2);
   lv_obj_set_style_text_color(stat, lv_color_white(), 0);
-  lv_label_set_text(stat, "M: 0/0k 0%");
+  lv_label_set_text(stat, "M: -% T: -C");
   lv_timer_create(update_label_cb, 1000, stat);
 
   lv_obj_t *canvas = lv_canvas_create(scr);
@@ -134,29 +159,27 @@ void setup_lv_ui(ssd1306_lcd_panel_t *lcd) {
 }
 
 static void update_label_cb(lv_timer_t *timer) {
+  char buf[16];
+
   lv_obj_t *label = lv_timer_get_user_data(timer);
   ssd1306_lcd_panel_t *lcd = lv_obj_get_user_data(label);
-  if (xSemaphoreTake(lcd->lvgl_mutex, pdMS_TO_TICKS(LV_UI_REFRESH_PERIOD_MS)) !=
+
+  const size_t total_mem = heap_caps_get_total_size(MALLOC_CAP_8BIT);
+  const size_t free_mem = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+  float temperature;
+  ESP_ERROR_CHECK(
+      temperature_sensor_get_celsius(lcd->temp_handle, &temperature));
+
+  snprintf(buf, sizeof(buf), "M: %d%% T: %.0fC",
+           ((total_mem - free_mem) * 100) / (total_mem), temperature);
+
+  if (xSemaphoreTake(lcd->lvgl_mutex, pdMS_TO_TICKS(LV_UI_REFRESH_PERIOD_MS)) ==
       pdTRUE) {
+    lv_label_set_text(label, buf);
+    xSemaphoreGive(lcd->lvgl_mutex);
+  } else {
     ESP_LOGW(TAG, "Failed to take LVGL mutex");
-    return;
   }
-  size_t free_mem = heap_caps_get_free_size(MALLOC_CAP_8BIT);
-  static size_t total_mem = 0;
-  static char buf[32];
-  static uint8_t shift = 10;
-  static char *unit = "k";
-
-  if (total_mem == 0) {
-    total_mem = heap_caps_get_total_size(MALLOC_CAP_8BIT);
-  }
-
-  snprintf(buf, sizeof(buf), "M: %d/%d%s %d%%\n",
-           (total_mem - free_mem) >> shift, total_mem >> shift, unit,
-           ((total_mem - free_mem) * 100) / (total_mem));
-
-  lv_label_set_text(label, buf);
-  xSemaphoreGive(lcd->lvgl_mutex);
 }
 
 void lv_timer_handler_task(void *pvParameters) {
@@ -220,8 +243,8 @@ static void lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area,
     }
   }
   // draw with esp driver
-  esp_lcd_panel_draw_bitmap(lcd->panel_handle, x1, y1, x2 - x1 + 1, y2 - y1 + 1,
-                            lcd->lcd_buf);
+  ESP_ERROR_CHECK(esp_lcd_panel_draw_bitmap(
+      lcd->panel_handle, x1, y1, x2 - x1 + 1, y2 - y1 + 1, lcd->lcd_buf));
   // unlock ui and lcd mutex
   xSemaphoreGive(lcd->lvgl_mutex);
   // notify flush done

@@ -2,6 +2,7 @@
 #include <stdio.h>
 
 #include "driver/i2c_master.h"
+#include "driver/temperature_sensor.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"

@@ -5,6 +5,13 @@
 
 #include "lcd.h"
 #define TAG "RENDER"
+#define CHECK_ALLOC(ptr)                                    \
+  do {                                                      \
+    if (ptr == NULL) {                                      \
+      ESP_LOGE(TAG, "Failed to allocate memory: %s", #ptr); \
+      abort();                                              \
+    }                                                       \
+  } while (0)
 
 static void cube_init(object3d_t *obj, vec3_t *offset, vec3_t *rotate);
 static void cone_init(object3d_t *obj, vec3_t *offset, vec3_t *rotate);
@@ -22,12 +29,14 @@ static void inline rotate_z(vec3_t *vertex, float angle);
 render_data_t *setup_render_data(ssd1306_lcd_panel_t *lcd) {
   render_data_t *data =
       heap_caps_calloc(1, sizeof(render_data_t), MALLOC_CAP_8BIT);
+  CHECK_ALLOC(data);
   data->lcd = lcd;
   data->camera_pos = (vec3_t){0.0, 0.0, -8.0};
   data->camera_dir = (vec3_t){0.0, 0.0, 1.0};
   data->fov = FOV;
   data->objects =
       heap_caps_calloc(OBJECT_COUNT, sizeof(object3d_t), MALLOC_CAP_8BIT);
+  CHECK_ALLOC(data->objects);
   data->object_count = OBJECT_COUNT;
 
   cube_init(data->objects, &(vec3_t){-4.0, 0.0, 0.0}, &(vec3_t){0.0, 0.0, 0.0});
@@ -75,6 +84,7 @@ void canvas_render_cb(lv_timer_t *timer) {
 static void cube_init(object3d_t *obj, vec3_t *offset, vec3_t *rotate) {
   obj->vertices =
       heap_caps_calloc(CUBE_VERTEX_COUNT, sizeof(vec3_t), MALLOC_CAP_8BIT);
+  CHECK_ALLOC(obj->vertices);
   obj->vertices[0] = (vec3_t){-1, -1, -1};
   obj->vertices[1] = (vec3_t){1, -1, -1};
   obj->vertices[2] = (vec3_t){1, 1, -1};
@@ -85,6 +95,7 @@ static void cube_init(object3d_t *obj, vec3_t *offset, vec3_t *rotate) {
   obj->vertices[7] = (vec3_t){-1, 1, 1};
   obj->vertex_count = CUBE_VERTEX_COUNT;
   obj->edges = heap_caps_calloc(12, sizeof(uint8_t[2]), MALLOC_CAP_8BIT);
+  CHECK_ALLOC(obj->edges);
   obj->edges[0][0] = 0;
   obj->edges[0][1] = 1;
   obj->edges[1][0] = 1;
@@ -117,9 +128,11 @@ static void cube_init(object3d_t *obj, vec3_t *offset, vec3_t *rotate) {
 static void cone_init(object3d_t *obj, vec3_t *offset, vec3_t *rotate) {
   obj->vertices =
       heap_caps_calloc(CONE_SIDES + 1, sizeof(vec3_t), MALLOC_CAP_8BIT);
+  CHECK_ALLOC(obj->vertices);
   obj->vertices[CONE_SIDES] = (vec3_t){0, 2, 0};  // 꼭짓점
   obj->edges =
       heap_caps_calloc(CONE_SIDES * 2, sizeof(uint8_t[2]), MALLOC_CAP_8BIT);
+  CHECK_ALLOC(obj->edges);
   for (int i = 0; i < CONE_SIDES; i++) {
     float angle = i * 2 * M_PI / CONE_SIDES;
     obj->vertices[i] = (vec3_t){cos(angle), -1, sin(angle)};
@@ -137,8 +150,10 @@ static void cone_init(object3d_t *obj, vec3_t *offset, vec3_t *rotate) {
 static void cylinder_init(object3d_t *obj, vec3_t *offset, vec3_t *rotate) {
   obj->vertices =
       heap_caps_calloc(CYLINDER_SIDES * 2, sizeof(vec3_t), MALLOC_CAP_8BIT);
+  CHECK_ALLOC(obj->vertices);
   obj->edges =
       heap_caps_calloc(CYLINDER_SIDES * 3, sizeof(uint8_t[2]), MALLOC_CAP_8BIT);
+  CHECK_ALLOC(obj->edges);
   for (int i = 0; i < CYLINDER_SIDES; i++) {
     float angle = i * 2 * M_PI / CYLINDER_SIDES;
     obj->vertices[i] = (vec3_t){cos(angle), -1, sin(angle)};
@@ -161,9 +176,11 @@ static void sphere_init(object3d_t *obj, vec3_t *offset, vec3_t *rotate) {
   obj->vertices =
       heap_caps_calloc(SPHERE_LATITUDE_COUNT * SPHERE_LONGITUDE_COUNT,
                        sizeof(vec3_t), MALLOC_CAP_8BIT);
+  CHECK_ALLOC(obj->vertices);
   obj->edges =
       heap_caps_calloc(SPHERE_LATITUDE_COUNT * SPHERE_LONGITUDE_COUNT * 2,
                        sizeof(uint8_t[2]), MALLOC_CAP_8BIT);
+  CHECK_ALLOC(obj->edges);
   for (int i = 0; i < SPHERE_LATITUDE_COUNT; i++) {
     float theta = i * M_PI / (SPHERE_LATITUDE_COUNT - 1);
     for (int j = 0; j < SPHERE_LONGITUDE_COUNT; j++) {
@@ -214,12 +231,15 @@ static void draw_object(lv_layer_t *layer, render_data_t *data,
                         object3d_t *object) {
   vec3_t *rotated_vertices =
       heap_caps_malloc(object->vertex_count * sizeof(vec3_t), MALLOC_CAP_8BIT);
+  CHECK_ALLOC(rotated_vertices);
   lv_memcpy(rotated_vertices, object->vertices,
             object->vertex_count * sizeof(vec3_t));
   float *projected_x =
       heap_caps_malloc(object->vertex_count * sizeof(float), MALLOC_CAP_8BIT);
+  CHECK_ALLOC(projected_x);
   float *projected_y =
       heap_caps_malloc(object->vertex_count * sizeof(float), MALLOC_CAP_8BIT);
+  CHECK_ALLOC(projected_y);
 
   // 회전 및 위치 적용
   for (int i = 0; i < object->vertex_count; i++) {
