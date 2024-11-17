@@ -12,11 +12,10 @@ ESP32-C3와 FreeRTOS 환경에서 LVGL을 활용하여 간단한 와이어프레
 
 ## 작동 영상
 
-- 헤어드라이어로 온도를 높였다가 냉각하여 온도가 낮아지는 것을 확인할 수 있습니다.
+- 헤어드라이어로 온도를 높였다가 낮추면 온도가 갱신되는 것을 확인할 수 있습니다.
 - 라벨은 1초마다 갱신됩니다.
 
-https://github.com/user-attachments/assets/192fa38a-f3c9-425a-83f8-c7a8667ad9b2
-
+https://github.com/user-attachments/assets/c6a95889-1bdf-4f09-9469-725d5df8602f
 
 ## 요구 사항
 
