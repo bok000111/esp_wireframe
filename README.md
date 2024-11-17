@@ -10,6 +10,10 @@ ESP32-C3와 FreeRTOS 환경에서 LVGL을 활용하여 간단한 와이어프레
 - **메모리 사용량 모니터링**: FreeRTOS의 메모리 관리 API를 활용하여 스택 및 힙 메모리 사용량을 실시간으로 측정하고, LVGL을 통해 GUI로 표시합니다.
 - **멀티태스킹**: 와이어프레임 렌더링과 메모리 모니터링을 각각 독립적인 FreeRTOS 태스크로 분리하여 실행합니다.
 
+## 작동 영상
+https://github.com/user-attachments/assets/192fa38a-f3c9-425a-83f8-c7a8667ad9b2
+
+
 ## 요구 사항
 
 - ESP32-C3 모듈
